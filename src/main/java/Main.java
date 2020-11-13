@@ -1,18 +1,72 @@
+import com.mongodb.BasicDBObject;
+import com.mongodb.DBCursor;
+import com.mongodb.MongoClient;
+import com.mongodb.MongoClientURI;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
+import org.bson.Document;
+
 import javax.mail.*;
 import javax.mail.internet.AddressException;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.nio.charset.Charset;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.Iterator;
 import java.util.Properties;
 import java.util.Random;
 import java.util.Scanner;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 public class Main {
-    public static void main(String[] args) {
+    public static Properties configProperties = new Properties();
+
+    public static void main(String[] args) throws IOException, InvalidKeySpecException, NoSuchAlgorithmException {
+        Logger logger = Logger.getLogger("org.mongodb.driver");
+        logger.setLevel(Level.SEVERE);
+
+        Scanner sc = new Scanner(System.in);
+
+        FileInputStream fileInputStream = new FileInputStream("C:/Users/User/Desktop/CS_LAB8s/src/main/java/config.properties");
+        configProperties.load(fileInputStream);
+
+        MongoClientURI uri = new MongoClientURI("mongodb+srv://sysadmin:" + configProperties.getProperty("dbpassword") + "@cluster0.j1yj9.mongodb.net/myDB?retryWrites=true&w=majority");
+        MongoClient mongoClient = new MongoClient(uri);
+        MongoDatabase database = mongoClient.getDatabase("myDB");
+
+        MongoCollection<Document> collection = database.getCollection("testcollection1");
+
+        boolean flag = true;
+        while(flag) {
+            System.out.println("1 - register , 2 - authenticate, 3 - exit program");
+            String option = sc.nextLine();
+            switch (option) {
+                case "1":
+                    registerNewUser(collection);
+                    break;
+                case "2":
+                    authenticate(collection);
+                    break;
+                case "3":
+                    flag = false;
+                    break;
+            }
+        }
+
+    }
+
+
+    public static void registerNewUser(MongoCollection<Document> collection) throws InvalidKeySpecException, NoSuchAlgorithmException {
         Scanner sc = new Scanner(System.in);
         String email;
-        char[] password;
+        String password;
         while (true) {
             System.out.println("Enter your email");
             email = sc.nextLine();
@@ -21,7 +75,8 @@ public class Main {
                 continue;
             }
             System.out.println("Enter your password");
-            password = System.console().readPassword();
+            password = String.valueOf(System.console().readPassword());
+            password = Hash.generateHash(password);
             break;
         }
 
@@ -33,6 +88,8 @@ public class Main {
             String code = sc.nextLine();
             if(code.equals(checkString)) {
                 System.out.println("Registration complete, welcome!!!");
+                Document document = new Document("email", email).append("password", password);
+                collection.insertOne(document);
                 break;
             }
             else {
@@ -42,11 +99,39 @@ public class Main {
         }
     }
 
+    public static void authenticate(MongoCollection<Document> collection) throws InvalidKeySpecException, NoSuchAlgorithmException {
+        Scanner sc = new Scanner(System.in);
+        System.out.println("Enter your email");
+        String email = sc.nextLine();
+        System.out.println("Enter your password");
+        char[] password = System.console().readPassword();
+
+        long count = collection.countDocuments(new Document("email", email));
+        if(count != 1) {
+            System.out.println("Invalid email/password");
+            return ;
+        }
+        else {
+            BasicDBObject query = new BasicDBObject();
+            query.put("email", email);
+            FindIterable<Document> iterDoc =  collection.find(query);
+            int i = 1;
+            Iterator it = iterDoc.iterator();
+            while(it.hasNext()) {
+                Document document = (Document) it.next();
+                if(Hash.validatePassword(String.valueOf(password), document.getString("password")))
+                    System.out.println("Successfully authenticated, welcome");
+                else
+                    System.out.println("Invalid email/password");
+            }
+        }
+    }
+
     public static void sendEmail(String to, String checkString) {
-        String from = "dvalera225@gmail.com";
+        String from = configProperties.getProperty("confirmation_email");
         String host = "smtp.gmail.com";
 
-        Properties properties = System.getProperties();
+        final Properties properties = System.getProperties();
         properties.put("mail.smtp.host", host);
         properties.put("mail.smtp.port", "465");
         properties.put("mail.smtp.ssl.enable", "true");
@@ -56,7 +141,7 @@ public class Main {
 
             protected PasswordAuthentication getPasswordAuthentication() {
 
-                return new PasswordAuthentication("dvalera225@gmail.com", "Destrugatorul22");
+                return new PasswordAuthentication(configProperties.getProperty("confirmation_email"), configProperties.getProperty("confirmation_email_password"));
 
             }
 
